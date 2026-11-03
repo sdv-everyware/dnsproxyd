@@ -1,0 +1,6 @@
+# dnsproxyd (/product/bin/dnsproxyd). Permissive until the policy is written from the
+# denials of a running device.
+type sdv_dnsproxyd, domain, coredomain;
+type sdv_dnsproxyd_exec, system_file_type, exec_type, file_type;
+init_daemon_domain(sdv_dnsproxyd)
+permissive sdv_dnsproxyd;

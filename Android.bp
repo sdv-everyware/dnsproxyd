@@ -1,0 +1,30 @@
+// dnsproxyd: name resolution for devices without netd.
+
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+rust_defaults {
+    name: "dnsproxyd_defaults",
+    srcs: ["src/main.rs"],
+    rustlibs: [
+        "libandroid_logger",
+        "liblibc",
+        "liblog_rust",
+        "librustutils",
+    ],
+}
+
+rust_binary {
+    name: "dnsproxyd",
+    defaults: ["dnsproxyd_defaults"],
+    init_rc: ["dnsproxyd.rc"],
+    product_specific: true,
+}
+
+rust_test {
+    name: "dnsproxyd_test",
+    defaults: ["dnsproxyd_defaults"],
+    test_suites: ["general-tests"],
+    auto_gen_config: true,
+}

@@ -1,0 +1,1 @@
+/(product|system/product)/bin/dnsproxyd    u:object_r:sdv_dnsproxyd_exec:s0

@@ -1,0 +1,12 @@
+# The socket name and permissions are the ones bionic's libnetd_client.so connects to
+# (system/netd/server/netd.rc), except the mode: 0666 instead of 0660 root inet, so a
+# process without the inet group (a service bundle) can resolve names too.
+service dnsproxyd /product/bin/dnsproxyd
+    user dns
+    group dns inet
+    socket dnsproxyd stream 0666 root inet
+    disabled
+
+# SDV init has no class_start, services are started by name.
+on boot
+    start dnsproxyd
