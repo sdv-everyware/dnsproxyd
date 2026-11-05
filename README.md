@@ -21,7 +21,7 @@ process ──getaddrinfo()──► libnetd_client.so ──/dev/socket/dnsprox
                                                                           │ /system/etc/hosts
                                                                           │ cache (TTL, max 5 min)
                                                                           ▼
-                                     DNS servers of the DHCP lease (/data/vendor/net/resolv.conf)
+                          DNS servers of the DHCP lease (properties vendor.net.<if>.dns1..4)
 ```
 
 ## What it does and does not do
@@ -107,8 +107,10 @@ and in the product's root init (SDV init only parses what is imported):
 import /product/etc/init/dnsproxyd.rc
 ```
 
-The board writes the servers of its DHCP lease as `nameserver <ip>` lines to
-`/data/vendor/net/resolv.conf`.
+The board's DHCP client publishes the servers of its lease as the properties
+`vendor.net.<if>.dns1`..`dns4` (AOSP's `dhcpclient`, `device/generic/trusty/dhcp/client`,
+does exactly that; the RB3 runs it on wlan0). `INTERFACES` in `src/resolver.rs` lists the
+interfaces in order of preference.
 
 ## Check
 

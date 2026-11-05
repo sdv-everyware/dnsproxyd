@@ -1,5 +1,5 @@
-//! Resolution: /system/etc/hosts first, then the DNS servers of the current DHCP lease,
-//! with a small cache.
+//! Resolution: /system/etc/hosts first, then the DNS servers of the current DHCP lease
+//! (the properties the DHCP client publishes), with a small cache.
 
 use crate::protocol::{self, Entry, Query, AF_INET, AF_INET6, AF_UNSPEC, EAI_FAIL, EAI_NODATA};
 use crate::wire::{self, Answer, TYPE_A, TYPE_AAAA};
@@ -11,9 +11,13 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const HOSTS: &str = "/system/etc/hosts";
-/// Written by the board's DHCP hook (`nameserver <ip>` lines). On the RB3 that is
-/// device/rb3/sdv_media_db845c/net/net_dhcp_hook.sh.
-const RESOLV_CONF: &str = "/data/vendor/net/resolv.conf";
+/// The interfaces whose lease is used, in order of preference. AOSP's dhcpclient
+/// (device/generic/trusty/dhcp/client) publishes the lease of `<if>` as the properties
+/// `vendor.net.<if>.dns1`..`dns4` (and `.gw`); the RB3 runs it on wlan0
+/// (device/rb3/sdv_media_db845c/net/net_bringup.sh).
+const INTERFACES: &[&str] = &["wlan0"];
+/// dhcpclient publishes up to four servers.
+const DNS_PROPERTIES: usize = 4;
 const TIMEOUT: Duration = Duration::from_secs(2);
 const ATTEMPTS: usize = 2;
 /// Upper bound for cached answers, so a changed lease is picked up soon.
@@ -114,20 +118,34 @@ fn hosts_lookup(text: &str, host: &str, family: i32) -> Vec<IpAddr> {
         .collect()
 }
 
+/// The DNS servers of the first interface that has a lease. Read on every query that
+/// misses the cache: a property read is a lookup in shared memory, and a new lease is
+/// then used at once.
 fn nameservers() -> Vec<IpAddr> {
-    fs::read_to_string(RESOLV_CONF)
+    INTERFACES
+        .iter()
+        .map(|interface| {
+            servers_from((1..=DNS_PROPERTIES).map(|i| {
+                rustutils::android::system_properties::read(&format!("vendor.net.{interface}.dns{i}"))
+                    .ok()
+                    .flatten()
+            }))
+        })
+        .find(|servers| !servers.is_empty())
         .unwrap_or_default()
-        .lines()
-        .filter_map(|line| line.strip_prefix("nameserver"))
-        .filter_map(|addr| addr.trim().parse().ok())
-        .collect()
+}
+
+/// The addresses among the property values, in order; empty and unparsable ones are
+/// skipped (dhcpclient clears a `dnsN` it did not get).
+fn servers_from(values: impl Iterator<Item = Option<String>>) -> Vec<IpAddr> {
+    values.flatten().filter_map(|value| value.trim().parse().ok()).collect()
 }
 
 /// Asks each server in turn; None when no server gave a usable answer.
 fn ask_servers(host: &str, qtype: u16) -> Option<Answer> {
     let servers = nameservers();
     if servers.is_empty() {
-        warn!("no DNS servers in {RESOLV_CONF}");
+        warn!("no DNS servers: no lease on {}", INTERFACES.join(", "));
         return None;
     }
     for _ in 0..ATTEMPTS {
@@ -164,5 +182,13 @@ mod tests {
         assert_eq!(hosts_lookup(text, "localhost", AF_INET), vec!["127.0.0.1".parse::<IpAddr>().unwrap()]);
         assert_eq!(hosts_lookup(text, "localhost", AF_UNSPEC).len(), 2);
         assert!(hosts_lookup(text, "example.com", AF_UNSPEC).is_empty());
+    }
+
+    #[test]
+    fn servers_from_lease_properties() {
+        let values = ["172.16.250.1", "", " 1.1.1.1 ", "not an address"].map(|s| Some(s.to_string()));
+        let servers = servers_from(values.into_iter().chain([None]));
+        assert_eq!(servers, vec!["172.16.250.1".parse::<IpAddr>().unwrap(), "1.1.1.1".parse().unwrap()]);
+        assert!(servers_from([None, Some(String::new())].into_iter()).is_empty());
     }
 }
